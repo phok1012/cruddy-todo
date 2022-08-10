@@ -2,52 +2,85 @@ const fs = require('fs');
 const path = require('path');
 const _ = require('underscore');
 const counter = require('./counter');
+const Promise = require('bluebird')
 
 var items = {};
 
 // Public API - Fix these CRUD functions ///////////////////////////////////////
 
 exports.create = (text, callback) => {
-  var id = counter.getNextUniqueId();
-  items[id] = text;
-  callback(null, { id, text });
+  counter.getNextUniqueId((err, counter) => {
+    let newpath = path.join(exports.dataDir, counter + '.txt')
+    fs.writeFile(newpath, text, (err) => {
+      err ? console.log(err) : callback(err, {'id': counter,'text': text})
+    })
+  });
 };
 
 exports.readAll = (callback) => {
-  var data = _.map(items, (text, id) => {
-    return { id, text };
-  });
-  callback(null, data);
+  fs.readdir(exports.dataDir, (err, files) => {
+
+    return new Promise ((resolve, reject) => {
+      const readOneAsync = Promise.promisify(exports.readOne)
+      let arrayOfPromises = files.map(text => {
+        return readOneAsync(text.slice(0, -4))
+      })
+      resolve(arrayOfPromises)
+    })
+    .then((arrayOfPromises) => {
+        return Promise.all(arrayOfPromises)
+      .then((arrayOftext) => {
+        callback(null, arrayOftext)
+      })
+    })
+  })
 };
 
 exports.readOne = (id, callback) => {
-  var text = items[id];
-  if (!text) {
-    callback(new Error(`No item with id: ${id}`));
+  let newPath = path.join(exports.dataDir, id + '.txt');
+  fs.readFile(newPath, (err, data) => {
+  if (err) {
+    callback(err);
   } else {
-    callback(null, { id, text });
+    callback(null, {'id': id, 'text':data.toString()});
   }
+  })
 };
 
 exports.update = (id, text, callback) => {
-  var item = items[id];
-  if (!item) {
-    callback(new Error(`No item with id: ${id}`));
-  } else {
-    items[id] = text;
-    callback(null, { id, text });
-  }
+  let newPath = path.join(exports.dataDir, id + '.txt');
+  fs.readdir(exports.dataDir, (err, files) => {
+    if (err) {
+      callback(err);
+    } else {
+      files.forEach((file) => {
+        if (file.slice(0, -4) === id) {
+          fs.writeFile(newPath, text, (err) => {
+            if(err) {
+              callback(err)
+            } else {
+              callback(null, {'id': id, 'text':text})
+            }
+          })
+        } else {
+          callback(true)
+        }
+      })
+    }
+  })
+
 };
 
 exports.delete = (id, callback) => {
-  var item = items[id];
-  delete items[id];
-  if (!item) {
-    // report an error if item not found
-    callback(new Error(`No item with id: ${id}`));
-  } else {
-    callback();
-  }
+  let newPath = path.join(exports.dataDir, id + '.txt');
+  fs.rm(newPath, (err) => {
+    if (err) {
+      callback(err);
+    }
+    else {
+      callback(null);
+    }
+  })
 };
 
 // Config+Initialization code -- DO NOT MODIFY /////////////////////////////////
